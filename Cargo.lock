@@ -3799,13 +3799,16 @@ dependencies = [
  "log",
  "rfd",
  "serde_json",
+ "soundcraft-audio-io",
  "soundcraft-engine",
  "soundcraft-model",
  "soundcraft-playback",
+ "soundcraft-time",
  "soundcraft-ui-egui",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "zip",
 ]
 
 [[package]]

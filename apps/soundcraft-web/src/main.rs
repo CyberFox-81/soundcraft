@@ -15,9 +15,13 @@
 //!   playback is heard.
 //!
 //! URL query flags: `?webgl` forces the WebGL2 backend instead of WebGPU; `?empty` starts with an
-//! empty session instead of the demo.
+//! empty session instead of the demo; `?host=parent` (inside an `<iframe>`) talks to a same-origin
+//! parent page instead: it sends the session or audio file to open and stores what SoundCraft
+//! saves and exports (`host`).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+#[cfg(target_arch = "wasm32")]
+mod host;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
