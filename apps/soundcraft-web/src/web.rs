@@ -14,8 +14,14 @@ const LOADING_ID: &str = "soundcraft_loading";
 
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
-    io::set_deliver(download);
-    wasm_bindgen_futures::spawn_local(async {
+    // `?host=parent`: a same-origin page framing SoundCraft (such as a Nextcloud app) opens
+    // sessions and audio files in it and stores what it saves (`host`), instead of downloads.
+    let bridge = if query_param("host").as_deref() == Some("parent") { crate::host::Bridge::new() } else { None };
+    match &bridge {
+        Some(bridge) => bridge.install(),
+        None => io::set_deliver(download),
+    }
+    wasm_bindgen_futures::spawn_local(async move {
         let Some(document) = web_sys::window().and_then(|w| w.document()) else {
             log::error!("no document");
             return;
@@ -30,6 +36,7 @@ pub fn start() {
         {
             create.instance_descriptor.backends = eframe::wgpu::Backends::GL;
         }
+        let app_bridge = bridge.clone();
         let result = eframe::WebRunner::new()
             .start(
                 canvas,
@@ -38,13 +45,22 @@ pub fn start() {
                     if let Some(rs) = &cc.wgpu_render_state {
                         log::info!("soundcraft-web: wgpu backend {:?}", rs.adapter.get_info().backend);
                     }
-                    let engine = if query().contains("empty") { Engine::default() } else { soundcraft_engine::demo::demo_engine() };
+                    // In host mode the parent sends the file to edit; no demo meanwhile.
+                    let engine =
+                        if app_bridge.is_some() || query().contains("empty") { Engine::default() } else { soundcraft_engine::demo::demo_engine() };
                     let player = soundcraft_playback::Player::new(Arc::new(engine.session().clone()));
                     let app = SoundApp::new(engine, Some(player), Services::default());
-                    Ok(Box::new(WebShell { app, inbox: Rc::default(), samples: Rc::default() }))
+                    if let Some(bridge) = &app_bridge {
+                        bridge.listen(cc.egui_ctx.clone());
+                        bridge.post_ready();
+                    }
+                    Ok(Box::new(WebShell { app, inbox: Rc::default(), samples: Rc::default(), bridge: app_bridge }))
                 }),
             )
             .await;
+        if let (Err(e), Some(bridge)) = (&result, &bridge) {
+            bridge.post_failed(&format!("{e:?}"));
+        }
         if let Some(el) = document.get_element_by_id(LOADING_ID) {
             match result {
                 Ok(()) => el.remove(),
@@ -56,6 +72,10 @@ pub fn start() {
 
 fn query() -> String {
     web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
+}
+
+fn query_param(key: &str) -> Option<String> {
+    web_sys::UrlSearchParams::new_with_str(&query()).ok()?.get(key)
 }
 
 /// What a file read from the browser is for.
@@ -115,6 +135,7 @@ struct WebShell {
     app: SoundApp,
     inbox: Inbox,
     samples: SampleInbox,
+    bridge: Option<crate::host::Bridge>,
 }
 
 impl WebShell {
@@ -194,6 +215,9 @@ impl WebShell {
 
 impl eframe::App for WebShell {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if let Some(bridge) = &self.bridge {
+            bridge.sync(&mut self.app);
+        }
         self.take_drops(ctx);
         self.take_path_prompt(ctx);
         let pending = std::mem::take(&mut *self.inbox.borrow_mut());
