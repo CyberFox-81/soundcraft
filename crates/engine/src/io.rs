@@ -72,7 +72,21 @@ pub fn file_found(path: impl AsRef<Path>) -> bool {
 /// Paths the person picks in this session (imports) are not stored paths and skip this.
 pub fn stored_path(stored: &str, session: &Path) -> std::result::Result<PathBuf, String> {
     let session = std::path::absolute(session).unwrap_or_else(|_| session.to_path_buf());
-    craft_docpath::resolve_absolute(stored, Some(&session)).map_err(|why| format!("not opened: {why}"))
+    resolve_absolute(stored, &session).map_err(|why| format!("not opened: {why}"))
+}
+
+/// `craft_docpath::resolve_absolute`, with a rooted path (`/a/b`) counting as absolute everywhere
+/// but on Windows. It asks `Path::is_absolute`, which wants a Windows prefix on
+/// wasm32-unknown-unknown and so is never true there: every path a session stores would be
+/// refused in the web build.
+fn resolve_absolute(stored: &str, session: &Path) -> std::result::Result<PathBuf, craft_docpath::Refused> {
+    let path = craft_docpath::resolve(stored, Some(session))?;
+    if is_rooted(&path) { Ok(path) } else { Err(craft_docpath::Refused::Invalid) }
+}
+
+/// Whether `path` is absolute on the running platform (see [`resolve_absolute`]).
+fn is_rooted(path: &Path) -> bool {
+    if cfg!(windows) { path.is_absolute() } else { path.has_root() }
 }
 
 /// Create `dir` and its parents, inside the automation write root when there is one.

@@ -357,6 +357,16 @@ mod open_tests {
         assert_eq!(std::fs::read_dir(dir.join("copy/Audio Files")).unwrap().count(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
+    /// A rooted path is absolute without asking `Path::is_absolute`, which is never true on
+    /// wasm32-unknown-unknown (where every stored audio path was refused).
+    #[cfg(not(windows))]
+    #[test]
+    fn rooted_session_paths_are_followed() {
+        let session = Path::new("/host/Music/Song.scraft");
+        assert_eq!(stored_path("Audio Files/k.wav", session), Ok(PathBuf::from("/host/Music/Audio Files/k.wav")));
+        assert_eq!(stored_path("/host/Music/k.wav", session), Ok(PathBuf::from("/host/Music/k.wav")));
+    }
+
     #[test]
     fn stored_paths_are_taken_from_the_session_folder() {
         let session = std::env::temp_dir().join("s").join("Song.scraft");
